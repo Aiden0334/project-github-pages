@@ -1,0 +1,205 @@
+---
+title: "Portfolio 1: Ethanol"
+author: "Youngjae Cho"
+date: "2025-04-29"
+output: 
+  html_document:
+    self_contained: true
+---
+
+```{r setup, include=FALSE, purl=FALSE}
+# Use echo = FALSE for Portfolio assignments
+knitr::opts_chunk$set(echo = FALSE)
+```
+
+```{r metadata, echo=FALSE}
+# Author:  Youngjae Cho
+# Date:    2024-04-29
+# Purpose: R Markdown file for Portfolio 1: Ethanol Analysis
+#-------------------------------------------------------------------------------
+```
+
+
+```{r packages}
+# Load packages
+suppressPackageStartupMessages(library("tidyverse")); theme_set(theme_bw())
+library("knitr")
+```
+
+
+The purpose of this document is to analyze the effect of ethanol on gas mileage with using the "gas_mileage_data.csv" data set. The primary scientific question is: 
+** How is gas mileage (miles per gallon) different when using gas with no ethanol compared to gas with 10% ethanol?**
+
+## Introduction
+
+The gas mileage data contains observations to compare from gasoline with no ethanol to gasoline with 10% ethanol. The goal is to determine if ethanol presence affects the miles per gallon (mpg) efficiency.
+The use of ethanol-blended fuel is widespread due to environmental benefits and cost considerations but it is significant to understand any potential trade-offs for fuel efficiency. Accurate evaluation of ethanol's impact on mpg can help consumers make better-informed decisions about fuel selection and policymakers assess the broader implications of promoting ethanol use. This analysis would be aimed to provide statistical evidence regarding any difference in gas mileage between the two fuel types.
+
+
+## Data
+
+```{r load-data}
+data <- read.csv("gas_mileage_data.csv", stringsAsFactors = FALSE)
+data <- data[!is.na(data$mpg) & !is.na(data$ethanol), ]
+data$ethanol[data$ethanol > 0 ] <- "YES"
+data$ethanol[data$ethanol == 0] <- "NO"
+data$ethanol <- factor(data$ethanol)
+```
+
+```{r summary-statistics}
+# Calculate summary statistics - counts, mean mpg, sd_mpg, by combining the mean and sd to build a new object "mean_sd."
+s <- data %>%
+  group_by(ethanol) %>%
+  summarize(
+    n = n(),
+    mean_mpg = mean(mpg),
+    sd_mpg = sd(mpg),
+    .groups = "drop"
+  ) %>%
+  mutate(
+    mean_sd = paste0(
+      format(round(mean_mpg, 1), nsmall = 1),
+      " (",
+      format(round(sd_mpg, 1), nsmall = 1),
+      ")"
+    ))
+```
+
+The experiment is recorded "r nrow(data)" observations. Miles per gallon ranged from "r min(data$mpg)" to "r max(data$mpg)."
+The table above indicates the mean and standard deviation of mpg: The summary statistics show that cars using gasoline without ethanol got a higher average mean miles per gallon with 20.5 mpg and 3.0 sd compared to cars, using gasoline with ethanol with 18.9 mpg and 2.9 sd. When ethanol is mixed, fuel efficiency is lower than when the ethanol is not present. However, the variability in fuel efficiency between two groups was approximately the same. 
+
+
+```{r summary-statistics-table}
+# Create HTML table from summary statistics
+s %>%
+  pivot_wider(
+    names_from = ethanol,
+    values_from = mean_sd
+  ) %>%
+  knitr::kable(
+    caption = "Mean (SD) of Miles Per Gallon for Ethanol vs Non-Ethanol Gasoline",
+      # label   = "summary-statistics",
+    align = c("rlll")) # Column alignment: [r]ight or [l]eft
+```
+
+From the exploratory plot below, it shows the distances per gallon of each car, with "NO" ethanol car on the left and "YES" ethanol car on the right. In the case of non-ethanol cars, the data usually remain at mpg between 15 and 25 and we could see the two bipolar outliers. In the case of car with ethanol, the data generally distributed at mpg between 12 and 25 with two outliers, that are close to the average data range. Both groups show the similar variability within the same range. 
+
+```{r exploratory}
+# Create exploratory plot of the data
+ggplot(data,
+       aes(
+         x = ethanol,
+         y = mpg,
+         color = ethanol,
+         shape = ethanol
+       )) +
+  geom_point(
+    position = position_jitterdodge(
+      dodge.width = 0.1,
+      jitter.width = 0.05
+    )
+  ) +
+  labs(
+    x = "Presence of Ethanol (Yes or No)",
+    y = "Miles Per Gallon (mpg)",
+    title = "Gas Mileage by Ethanol Usage"
+  )
+```
+
+## Results
+
+```{r model-interaction}
+# I want to use Normal family but in R, there was an error to use this. 
+# Therefore, I would use gaussian family with this continuous variable, mpg. 
+m <- glm(mpg ~ ethanol, 
+         data = data, 
+         family = gaussian()
+)
+```
+
+We use gaussian family because normal family is not available in R. Also, the miles per gallon is a continuous outcome, we fit a linear regression model with ethanol.
+The model assumes: 
+$$ Y_i = \beta_0 + \beta_1 \text{Ethanol}_i + \epsilon_i $$
+
+Y_i is the mpg for observation i that is the fuel efficiency of ith car. And beta_0 is the intercept to show the average mean of mpg with ethanolNo. Next, beta_1 is a slope, the coefficient of ethanol, that indicates the difference in average mpg between ethanol with YES and ethanol with NO. Ethanol_i is the predictor variable and also the binary variable. 
+For example, when the observation i has no ethanol, Ethanol_i is equal to 0. When the observation i used 10% ethanol, Ethanol_i is equal to 1. Finally, the epsilon_i is the error that indicates the residual from observation i. This variable demonstrates the variability. 
+From the r model-interaction, the model showed a total as 346 dfs with 345 residual dfs, 3169 for zero deviation, 2974 for residual deviation, and AIC as 1736. In the case of mpg, we fitted a genearalized linear model with a Gaussian family for continuous data using ethanol presence or absence as a predictor. The model estimated a intercept as 20.478. The prsence of ethanol coefficient was -1.582 that means cars using gasoline with 10% ethanol have a lower fuel efficiency of 1.6 mpg compared to cars without ethanol. In conclusion, the results indicate that ethanol-mixed fuel is related to reduced fuel economy. 
+
+
+
+A plot of the estimated average mpg and 95% confidence intervals is showed below: 
+
+The plot shows that cars using gasoline without ethanol have an estimated average value of 20.5 mpg, but cars using gasoline with 10% ethanol have lower estimated mean value of 18.9 mpg. The plot shows a clear downward trend from ethanolNO to ethanolYES group. This indicates that the presence of ethanol in fuel is related to reduction in average fuel efficiency. 
+```{r predictions}
+data_means <- data %>%
+  group_by(ethanol) %>%
+  summarize(
+    n_group = n(),
+    mean_mpg = mean(mpg),
+    se_mpg = sd(mpg) / sqrt(n()),
+    .groups = "drop"
+  ) %>%
+  mutate(
+    lower = mean_mpg - qt(0.975, n_group - 1) * se_mpg,
+    upper = mean_mpg + qt(0.975, n_group - 1) * se_mpg
+  )
+```
+
+```{r}
+ggplot(data_means, aes(x = ethanol, y = mean_mpg)) +
+  geom_pointrange(aes(ymin = lower, ymax = upper)) +
+  geom_line(aes(group = 1)) +
+  labs(
+    x = "Presence of Ethanol (Yes or No)",
+    y = "MPG",
+    title = "Estimated Mean MPG with 95% Confidence Intervals",
+    subtitle = "Linear Regression Model"
+  )
+```
+
+## Discussion
+
+```{r ci}
+# Construct confidence interval to answer scientific question
+ci <- data_means %>%
+  filter(ethanol == "YES") %>%
+  select(lower, upper) %>%
+  mutate(
+    lower = round(lower, 1),
+    upper = round(upper, 1))
+```
+
+In this experiment, we analyzed the gas mileage data for comparing cars between with ethanol and without ethanol. The data were collected by observational measurements of mpg for each car. We used a linear regression model with ethanol as an explanatory variable to estimate the average mpg in each group. The results showed that cars without ethanol had an estimated mean value of 20.5 mpg but cars with ethanol had an estimated mean value of 18.9 mpg. Therefore, cars with ethanol had a lower average mpg than cars without ethanol. The 95% confidence interval for the average mean mmpg in the ethanol group is between 18.5 and 19.3. The plot above demonstrated the clear downward trend. We can see that the presence of ethanol is related to reduction fuel efficiency. 
+
+Regarding model assumptions, we assumed the independence of observations, as each car was measured separately. Also, we assumed the approximate normality of the residuals. In addition, we assumed the homoscedasticity across the ethanol groups. We suggest that the diagnostics plots and residual checks would be helped to confirm the validity of the assumptions. 
+
+The results show the useful sight but there are some limitations when we start from the large population. We might be concluded that ethanol causes low mpg at low data counts, but not at higher populations. Also, there would be external variables outside the current data set. Data should also be analyzed within a controlled experiment because these external variables can affect uncontrolled fuel efficiency. However, it would be helpful for consumers' decisions because the plot above left the visual evidence that cars with ethanol in the 95% confidence interval for the estimated mean mpg lower the fuel efficiency. 
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+

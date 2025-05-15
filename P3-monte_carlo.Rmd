@@ -1,0 +1,213 @@
+---
+title: "Portfolio 3: Monte Carlo Study"
+author: "Youngjae Cho"
+date: "2025-05-03 ~ 2025-05-09"
+output: 
+  html_document:
+    self_contained: true
+---
+
+```{r setup, include=FALSE, purl=FALSE}
+# Use echo = FALSE for Portfolio assignments
+knitr::opts_chunk$set(echo = FALSE)
+```
+
+```{r metadata, echo=FALSE}
+# Author:  Youngjae Cho
+# Date:    2025-05-03 ~ 2025-05-09
+# Purpose: R Markdown file for Portfolio 2: Monte Carlo Study.
+#-------------------------------------------------------------------------------
+```
+
+
+```{r packages}
+# Load packages
+suppressPackageStartupMessages(library("tidyverse")); theme_set(theme_bw())
+library("knitr")
+library(tidyverse)
+```
+
+
+The purpose of this portfolio is to compare the frequentist and Bayesian estimators in estimating a population proportion. 
+The primary scientific question is: 
+** Which method estimate more accurately in the true probability p between frequentist or Bayesian estimator?**
+
+
+## Introduction
+
+
+The goal of Monte Carlo Study is to compare how well frequentist and Bayesian methods estimate the population proportion. We concentrate on how accurate their estimates are and how well their confidence intervals capture the true probability. 
+For this study, we would use a Monte Carlo simulation and build binomial samples with different true probabilities. Then, we would calculate the MSE value and interval coverage. 
+Finally, we would simulate repeated binomial samples with point estimates and confidence intervals for evaluating the statistical accuracy. 
+
+
+## Data
+
+
+```{r data setting}
+# For parameters.
+set.seed(12345)
+n_sim <- 1000 
+n <- 20 
+p_values <- seq(0.1, 0.9, by =0.1)
+
+```
+
+```{r data simulation}
+sim_results <- expand.grid(p = p_values, sim = 1:n_sim) %>%
+  rowwise() %>%
+  mutate(
+    x = rbinom(1, n, p),
+    freq_est = x / n,
+    bayes_est = (x + 1) / (n + 2),
+    freq_lower = prop.test(x, n)$conf.int[1],
+    freq_upper = prop.test(x, n)$conf.int[2],
+    bayes_lower = qbeta(0.025, x + 1, n - x + 1),
+    bayes_upper = qbeta(0.975, x + 1, n - x + 1),
+    freq_cover = p >= freq_lower & p <= freq_upper,
+    bayes_cover = p >= bayes_lower & p <= bayes_upper
+  ) %>%
+  ungroup()
+```
+
+Notation: setting is that n is equal to 20 as a number of simulation runs. The sequence of true p values to test is from 0.1 to 0.9. Next, I made all combinations of p-values and simulation numbers as a sim_results object. We know that the binomial distribution has n trials and success probability p. Then, we make the objects for the estimate for frequentist and Bayesian methods. For the Bayesian estimate, posterior mean is needed. Finally, we make 
+the confidence intervals for frequentist and Bayesian for p. 
+
+
+## Analysis
+
+
+```{r MSE-Summary}
+# Build a MSE Summary for frequentist and Bayesian methods. 
+mse_summary <- sim_results %>%
+  group_by(p) %>%
+  summarize(
+    mse_freq = mean((freq_est - p)^2),
+    mse_bayes = mean((bayes_est - p)^2),
+    .groups = "drop"
+  ) %>%
+  pivot_longer(-p, 
+               names_to = "method", 
+               values_to = "mse")
+```
+
+From the plot below, the Bayesian estimators are generally more stable than the frequentist because red line with mse_bayesian is under the blue line with mse_frequentist. Therefore, Bayesian reduction is more helpful for entire process. 
+In conclusion, the Bayesian estimator is more stable among two estimators because it has less variance and smaller mean squared errors. From the Bayesian method, the data move closer to the parameters. 
+
+```{r mse plot for checking the best estimator}
+# Build ggplot for using mse_summary for frequentist and Bayesian. 
+ggplot(mse_summary, aes(x = p, y = mse, color = method)) +
+  geom_line(size = 1) +
+  labs(
+    title = "Mean Squared Error between frequentist and Bayesian method",
+    x = "True Probability",
+    y = "MSE",
+    color = "Method"
+  ) + theme_minimal()
+```
+
+```{r coverage summary}
+coverage_summary <- sim_results %>%
+  group_by(p) %>%
+  summarize(
+    #Average mean coverage for frequentist method.
+    cover_freq = mean(freq_cover),   
+    #Average mean coverage for Bayesian method.
+    cover_bayes = mean(bayes_cover), 
+    .groups = "drop"
+  ) %>%
+  pivot_longer(-p, names_to = "method", values_to = "coverage")
+
+```
+
+```{r Coverage summary plot}
+ggplot(coverage_summary, 
+       aes(x = p, 
+           y = coverage,
+           color = method)) +
+  geom_line(size = 1) +
+  geom_hline(yintercept = 0.95, linetype = "dashed") +
+  labs(
+    title = "Coverage Probability between True Probability and Coverage.",
+    x = "True Probability",
+    y = "Coverage",
+    color = "Method"
+  ) + theme_minimal()
+```
+From the plot of Coverage Probability between True Probability and Coverage above, it aims to get a target of 95% coverage for both methods. We can see only coverage of Bayesian method touches the dashed line which is the interval estimate was performed perfectly. For this reason, we think that the Bayesian method is better than the frequentist but Bayesian method is observed to be lower than the nominal level at 0.7 true probability. Therefore, if we are aiming for stability and reliability, we can conclude to say that the coverage of frequentist method is better than the coverage of Bayesian method. 
+
+
+## Discussion
+
+```{r standard error for MSE Monte Carlo Uncertainty}
+sim_results <- sim_results %>%
+  mutate(
+    sq_err_freq = (freq_est - p)^2,
+    sq_err_bayes = (bayes_est - p)^2
+  )
+
+mse_summary <- sim_results %>%
+  group_by(p) %>%
+  summarize(
+    mse_freq = mean(sq_err_freq),
+    mse_bayes = mean(sq_err_bayes),
+    se_freq = sd(sq_err_freq) / sqrt(n_sim),
+    se_bayes = sd(sq_err_bayes) / sqrt(n_sim),
+    .groups = "drop"
+  )
+
+```
+
+```{r standard error for Coverage Monte Carlo Uncertainty}
+coverage_summary <- sim_results %>%
+  group_by(p) %>%
+  summarize(
+    cover_freq = mean(freq_cover),
+    cover_bayes = mean(bayes_cover),
+    se_cover_freq = sd(freq_cover) / sqrt(n_sim),
+    se_cover_bayes = sd(bayes_cover) / sqrt(n_sim),
+    .groups = "drop"
+  )
+```
+
+```{r 95% CI with standard error for MSE}
+mse_summary <- mse_summary %>%
+  mutate(
+    lower_freq = mse_freq - 1.96 * se_freq,
+    upper_freq = mse_freq + 1.96 * se_freq,
+    lower_bayes = mse_bayes - 1.96 * se_bayes,
+    upper_bayes = mse_bayes + 1.96 * se_bayes
+  )
+
+```
+The table above is the 95% confidence intervals for MSE of frequentist and Bayesian estimates across various real probabilities. We can see that the Bayesian MSE is lower than the frequentist MSE. Therefore, Bayesian estimates give more accurate point estimates. Since the confidence intervals of MSEs built using Monte Carlo standard errors show narrow confidence intervals, for example, from 0.0046 to 0.0057 confidence interval at the first row of the table. This can reduce the uncertainty and increase stability. 
+
+
+```{r 95% CI with standard error for Coverage}
+coverage_summary <- coverage_summary %>%
+  mutate(
+    lower_cover_freq = cover_freq - 1.96 * se_cover_freq,
+    upper_cover_freq = cover_freq + 1.96 * se_cover_freq,
+    lower_cover_bayes = cover_bayes - 1.96 * se_cover_bayes,
+    upper_cover_bayes = cover_bayes + 1.96 * se_cover_bayes
+  )
+```
+The table above shows the 95% confidence interal for coverage probability from frequentist and Bayesian interval estimators. The CIs for two coverages from two estimators are very wide. If we take a sample of one of the covarage of CIs for the 9 observations above, for instance, the confidence interval from 0.94 to 0.97 is pretty wide. This causes the uncertainty and also increases the risk of stability. 
+
+
+The goal of this Monte Carlo Study was to compare the performance between frequntist estimator and Bayesian estimator when estimating the population ratios. It aimed to evaluate how accurately each method estimates the actual ratio and how well their interval estimates capture the actual parameters from 9 observations. 
+
+This study was designed by Monte Carlo Simulations and conducted by repeated binomial samples for nine probabilities with frequentist and Bayesian estimation methods. For each simulation sample, we were able to systematically compare two methods by calculating the point estimate, MSE value, and coverage probability of the interval. 
+
+From MSE result, it shows that Bayesian estimates consistently made lower MSEs than frequentist estimates. So, we can see that Bayesian methods provide more accurate and reliable point estimates. Statistically, the low MSE means that the data are close to the parameter. As an example among 9 CIs of MSEs, CI between 0.0046 and 0.0057 indicates narrow interval. This can reduce the uncertainty and improved the reliability of the data.
+
+From Coverage result, it shows that most of CIs for covarage probability using frequentist and Bayesian methods is tremendously wide. Most of them ranged from 0.94 to 0.97 or 0.99. This wide interval results in uncertainty in the reliability of coverage performance. 
+In conclusion, the most suitable method would be Bayesian estimator for population ratio, p.
+
+
+
+
+
+
+
+
