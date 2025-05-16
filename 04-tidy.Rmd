@@ -1,0 +1,199 @@
+---
+title: "04-tidy.R"
+author: "Youngjae Cho"
+date: "2025-02-27"
+output: pdf_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+
+#Library setting
+library(tidyverse)
+
+```
+
+```{r}
+#One of use of instruction: pipes, e.g. |>, when there is 
+#more than 1 operation.
+#Question 1. Start with diamond data set. Create a data frame
+#object with the name q#, #.
+
+#Question 1-1. Rename price to 'Price' but o.w. leave the diamonds
+#data set untouched.
+
+#One possible answer: 
+q1.1 <- diamonds |>
+  rename(Price = price)
+q1.1
+```
+
+```{r}
+#Question 1-2. Rename the columns price, carat, cut, color, and
+#clarity so they all have the first letter capitalized. 
+q1.2 <- diamonds |>
+  rename(Price = price, Carat = carat, Cut = cut, Color = color, Clarity = clarity)
+q1.2
+```
+
+```{r}
+#Question 1-3. Create a new variable called 'Dollar per carat'
+#that is price divided by carat. 
+q1.3 <- diamonds |>
+  mutate("Dollar per carat" = price / carat)
+q1.3
+```
+
+```{r}
+#Question 1-4. Select only those diamonds whose cut is ideal.
+q1.4 <- diamonds |> 
+  filter(cut == "Ideal")
+q1.4
+```
+
+```{r}
+#Question 1-5. Create a data frame that only has the x, y, and z
+#columns. 
+q1.5 <- diamonds |> select(x, y, z)
+q1.5
+```
+
+```{r}
+#Question 1-6. Create a data frame that excludes depth and table
+q1.6 <- diamonds |> select(-depth, -table)
+q1.6
+```
+
+```{r}
+#Question 1-7. Keep diamonds with the following qualities: 
+#carat > 1.5, quality is Good, Premium, or Ideal, whose color 
+#is not D, and whose price is strictly between $10000 and $15000. 
+q1.7 <- diamonds |>
+  filter(carat > 1.5,
+         cut %in% c("Good", "Premium", "Ideal"),
+         !color %in% c("D"),
+         price > 10000 & price < 15000)
+q1.7
+```
+
+```{r}
+#Question 1-8. Create a data frame that has the following: 
+#only the price, carat, and x_cm columns, only diamonds with 
+#Premium quality, x_cm is the length of the diamond in cm, and
+#only diamonds whose width is 5 cm or more. 
+q1.8 <- diamonds |>
+  mutate(x_cm = x/10) |>
+  filter(cut == "Premium", y >=5) |>
+  select(price, carat, 'x_cm')
+q1.8
+```
+
+```{r}
+#Question 1-9. Create a data frame that has:
+#number of observations,n, 
+#mean of price, mean,
+#sample standard deviation of price, sd.
+q1.9 <- diamonds |>
+  summarise(n=n(), mean = mean(price), sd =sd(price))
+q1.9
+```
+
+```{r}
+#Question 1-10. Create a data frame that has:
+#n:number of observations, mean of carat, sample sd of carat.
+q1.10 <- diamonds |> 
+  filter(color == "J", clarity == "IF") |>
+  summarise(n=n(), mean = mean(carat), sd = sd(carat))
+q1.10
+```
+
+```{r}
+#Question 1-11.Create a data frame that has number of #obsevations, mean of price, and sample standard deviation 
+#of price.
+q1.11 <- diamonds |>
+  group_by(cut, color, clarity) |>
+  summarise(n=n(), mean = mean(price), sd=sd(price), 
+            .groups = "drop")
+q1.11
+```
+
+```{r}
+#Question 1-12. Use the data frame from the pdf file.
+#Clarity explanation frame is like this: 
+clarity_explanation <- tribble(
+  ~clarity, ~explanation,
+  "I1", "Included",
+  "SI1", "Slightly Included 1",
+  "SI2", "Slightly Included 2",
+  "VS1", "Very Slightly Included 1",
+  "VS2", "Very Slightly Included 2",
+  "VVS1", "Very, Very Slightly Included 1",
+  "VVS2", "Very, Very Slightly Included 2",
+  "IF", "Internally Flawless"
+)
+
+q1.12 <- diamonds |> 
+  left_join(clarity_explanation, by = "clarity")
+q1.12
+```
+
+```{r}
+#Question 1-13. Use the following data frame to filter the 
+#observations so that you only have the color and clarity 
+#combinations in the table below: 
+# Color and Clarity combinations to keep
+combos <- tribble(
+  ~color, ~clarity,
+  "E", "SI1",
+  "E", "VS2",
+  "F", "VVS2",
+  "F", "IF",
+  "H", "I1"
+)
+
+q1.13 <- diamonds |> 
+  semi_join(combos, by = c("color", "clarity"))
+q1.13
+```
+
+```{r}
+#Question 1-14. Use the combos data frame to remove those
+#color and clarity combinations. 
+q1.14 <- diamonds |>
+  anti_join(combos, by = c("color", "clarity"))
+q1.14
+```
+
+```{r}
+#Question 1-15.
+#For the combinations in the combos data frame, calculate 
+#number of observations, mean of price, and sample standard
+#of price, for each color-clarity combinations. 
+q1.15 <- diamonds |>
+  semi_join(combos, by = c("color", "clarity")) |>
+  group_by(color, clarity) |>
+  summarise(n=n(), mean = mean(price), sd = sd(price),
+            .groups = "drop")
+q1.15
+```
+
+
+## R Markdown
+
+This is an R Markdown document. Markdown is a simple formatting syntax for authoring HTML, PDF, and MS Word documents. For more details on using R Markdown see <http://rmarkdown.rstudio.com>.
+
+When you click the **Knit** button a document will be generated that includes both content as well as the output of any embedded R code chunks within the document. You can embed an R code chunk like this:
+
+```{r cars}
+summary(cars)
+```
+
+## Including Plots
+
+You can also embed plots, for example:
+
+```{r pressure, echo=FALSE}
+plot(pressure)
+```
+
+Note that the `echo = FALSE` parameter was added to the code chunk to prevent printing of the R code that generated the plot.
