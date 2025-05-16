@@ -1,0 +1,260 @@
+---
+title: "Portfolio 7 - Warpbreaks Analysis"
+author: "Youngjae Cho"
+date: "2024-02-08 ~ 2024-04-01"
+output: 
+  html_document:
+    self_contained: true
+---
+
+```{r setup, include=FALSE, purl=FALSE}
+# Use echo = FALSE for Portfolio assignments
+knitr::opts_chunk$set(echo = FALSE)
+```
+
+```{r metadata, echo=FALSE}
+# Author:  Youngjae Cho
+# Date:    2024-02-08 ~ 2024-04-01
+# Purpose: R Markdown file with P7 - Warpbreaks Analysis 
+#-------------------------------------------------------------------------------
+```
+
+
+```{r packages}
+# Load packages
+suppressPackageStartupMessages(library("tidyverse")); theme_set(theme_bw())
+library("knitr")
+```
+
+The purpose of this document is as an template R Markdown file that can be used
+as an example for constructing portfolio assignments in this course. 
+For demonstration purposes, we will utilize the `warpbreaks` data set. 
+
+## Introduction
+
+The warpbreaks data set consists of `r nrow(warpbreaks)` observations from a 
+designed experiment. 
+This experiment aims to study how wool type and tension affect the number
+of breaks observed during weaving. 
+In particular, we are interested in the wool type and tension that minimizes
+the number of breaks. 
+Since tension is coded as categorical variable (as opposed to numeric), 
+we will be limited to these three choices (L/M/H) for tension in minimizing
+the number of breaks.
+
+## Data
+
+```{r summary-statistics}
+# Calculate summary statistics by wool-tension combination
+s <- warpbreaks |>
+  group_by(wool, tension) |>
+  summarize(
+    n = n(),
+    mean = mean(breaks),
+    sd   = sd(breaks),
+    
+    .groups = "drop"
+  ) |>
+  mutate(
+    mean_sd = paste0(
+      format(round(mean, 1), nsmall = 1), # Keep exactly 1 decimal place
+      " (",
+      format(round(sd,   1), nsmall = 1), # Keep exactly 1 decimal place
+      ")"
+    )
+  ) 
+```
+
+The experiment was *balanced* with `r unique(s$n)` replicates for each 
+combination of wool type (A/B) and tension (L/M/H). 
+The number of breaks ranged from `r min(warpbreaks$breaks)` to 
+`r max(warpbreaks$breaks)` across all replicates. 
+The table below provides the mean and standard deviation of the number of 
+breaks for each combination of wool and tension. 
+As can be seen in this table, 
+wool B and tension H produces the fewest breaks and the least variability
+in the number of breaks.
+
+
+```{r summary-statistics-table}
+# Create HTML table from summary statistics
+s |>
+  pivot_wider(
+    id_cols = wool,
+    names_from = tension,
+    values_from = mean_sd
+  ) |>
+  rename(
+    Wool = wool
+  ) |>
+  knitr::kable(
+    caption = "Mean (SD) for Number of Breaks for each combination of Wool and Tension",
+    # label   = "summary-statistics",
+    align   = c("rlll")) # Column alignment: [r]ight or [l]eft
+```
+
+The figure below displays a scatterplot of the number of breaks versus tension
+and wool type. 
+When comparing wool A to wool B, 
+this figure suggests wool A has more breaks with tension L, 
+about the same mean breaks for tension M, 
+and (perhaps) fewer mean breaks for tension H. 
+For wool B and tension H, number of breaks ranged from 
+`r warpbreaks |> filter(wool=="B", tension=="H") |> pull(breaks) |> min()` to
+`r warpbreaks |> filter(wool=="B", tension=="H") |> pull(breaks) |> max()`.
+
+```{r exploratory}
+# Create exploratory plot of the data
+ggplot(warpbreaks,
+       aes(
+         x = tension,
+         y = breaks,
+         color = wool,
+         shape = wool
+       )) +
+  geom_point(
+    position = position_jitterdodge(
+      dodge.width  = 0.1,
+      jitter.width = 0.05
+    )
+  ) +
+  labs(
+    x = "Tension",
+    y = "Number of Breaks",
+    title = "Yarn Weaving Experiment"
+  )
+```
+
+## Results
+
+```{r model-interaction}
+# Fit Poisson regression model with interaction
+m <- glm(breaks ~ wool * tension,
+         data = warpbreaks,
+         family = "poisson")
+```
+
+Due to number of breaks being a count, 
+we will fit a Poisson regression model for number of breaks on
+wool, tension, and their interaction.
+The Poisson regression model assumes 
+$$Y_i \stackrel{ind}{\sim} Po(\lambda_i)$$
+where $Y_i$ is the number of breaks. The Poisson rate parameter is related to
+the wool type and tension through 
+$$\log(\lambda_i) = \beta_0 + \beta_1 \mbox{woolB}_i +
+\beta_2 \mbox{tensionM}_i + \beta_3 \mbox{tensionH}_i +
+\beta_4 \mbox{woolB}_i\times \mbox{tensionM}_i +
+\beta_5 \mbox{woolB}_i\times \mbox{tensionH}_i$$
+where, for observation $i$, 
+$\mbox{woolB}_i$ is an indicator for wool type B, 
+$\mbox{tensionM}_i$ is an indicator for tension M, and 
+$\mbox{tensionH}_i$ is an indicator for tension H.
+
+Since the interaction between wool and tension is significant 
+(p $\approx$ `r format(round(anova(m, test="Chi")[4,5], 4), nsmall=4)`), 
+we will keep the interaction in the model. 
+
+A plot of the estimated mean number of breaks and 95% confidence
+intervals is provided below. 
+As we saw with the original data, 
+the number of breaks generally decreases as tension increases.
+For a given tension, there are typically fewer breaks with 
+wool B compared to wool A. 
+
+```{r predictions}
+# Create data frame with unique explanatory variable values
+nd <- warpbreaks |>
+  select(tension, wool) |>
+  unique()
+
+# Predict
+p <- bind_cols(
+  nd,
+  predict(m,
+          newdata = nd,
+          se.fit = TRUE)|>
+      as.data.frame() |>
+      
+      # Manually construct confidence intervals
+      mutate(
+        lwr = fit - qnorm(0.975) * se.fit,
+        upr = fit + qnorm(0.975) * se.fit,
+        
+        # Exponentiate to get to response scale
+        breaks = exp(fit),
+        lwr    = exp(lwr),
+        upr    = exp(upr)
+      ) 
+  )
+
+# Plot group estimates
+pg <- ggplot(p,
+             aes(
+               x = tension,
+               y = breaks,
+               color = wool,
+               shape = wool,
+               group = wool,
+               ymin = lwr,
+               ymax = upr
+             )) + 
+  geom_pointrange() +
+  geom_line() +
+  labs(
+    x = "Tension",
+    y = "Number of Breaks",
+    title = "Estimated Mean Breaks with 95% Confidence Intervals",
+    subtitle = "Poisson Regression Model"
+  )
+
+pg
+```
+
+## Discussion
+
+```{r ci}
+# Construct confidence interval to answer scientific question
+ci <- p |>
+  filter(wool == "B",
+         tension == "H") |>
+  select(lwr,upr) |>
+  mutate(
+    lwr = round(lwr, 1),
+    upr = round(upr, 1)
+  )
+
+```
+
+We investigated a designed experiment to assess the impact of the wool type and
+tension on the number of breaks. 
+We found that in these data wool type B and tension H is resulted in the fewest
+mean breaks.
+A 95\% confidence interval for the mean number of breaks with wool type B and 
+tension H is (`r ci$lwr`, `r ci$upr`).
+
+The data were likely obtained sequentially and thus there is the chance for a 
+temporal effect violating our independence assumption, but no evidence of this
+was found in our diagnostic plots. 
+While the data are counts, and thus the normality assumption is technically 
+violated, qq-plots of the residuals indicate the normality assumption is 
+reasonable. 
+Compared to the other five combinations of tension and wool, 
+the low tension, wool A may have slightly more variability. 
+As this group has only slightly more variability, we are not worried about the
+constant variance assumption. 
+Alternative approaches would be to use the logarithm of breaks as the response 
+variable or use Poisson regression. 
+
+From the information we have, it is unclear if any randomization of wool or 
+tension to a particular run was done. 
+If wool and tension were randomly assigned to a particular run,
+then we can claim that the wool type and tension **caused** the difference in 
+the number of breaks.
+Even if randomization was done, our causal claims would be stronger for 
+tension than wool since we can only randomly assign wool to a run and not the
+type of wool to a bundle of wool.
+Since this yarn and looms are not a random sample from any population, 
+we need to be careful in trying to extend these results to some larger 
+population.
+
+
