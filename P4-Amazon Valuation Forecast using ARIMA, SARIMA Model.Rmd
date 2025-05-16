@@ -1,0 +1,239 @@
+---
+title: "Amazon Valuation - Monthly Stock Forecast: ARIMA vs SARIMA"
+author: "Youngjae Cho"
+date: "2025-05-15 ~ "
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+library(tidyverse)
+library(ggplot2)
+library(forecast)
+library(tseries)
+library(lubridate)
+```
+
+## 1. Load the data and prepare Monthly data from the data set.
+
+```{r data set}
+amazon <- read.csv("AMZN.csv", stringsAsFactors = FALSE)
+amazon$Date <- as.Date(amazon$Date)
+amazon <- amazon %>% arrange(Date)
+
+print(amazon)
+print(amazon$Date)
+```
+
+
+## Monthly aggregation for all variables in data set. 
+
+```{r}
+amazon_monthly <- amazon %>%
+  mutate(year_month = floor_date(Date, unit = "month")) %>%
+  group_by(year_month) %>%
+  summarize(
+    Open = mean(Open, na.rm = TRUE),
+    High = mean(High, na.rm = TRUE),
+    Low  = mean(Low, na.rm = TRUE),
+    Close = mean(Close, na.rm = TRUE),
+    Volume = sum(Volume, na.rm = TRUE),
+    Adj.Close = mean(Adj.Close, na.rm = TRUE)) %>%
+  ungroup()
+
+print(amazon_monthly)
+
+```
+
+## Time Series Targeting: Adjusted Close for a long-term. 
+
+```{r}
+ts_adj_close <- ts(amazon_monthly$Adj.Close,
+                   start = c(year(min(amazon_monthly$year_month)),
+                             month(min(amazon_monthly$year_month))),
+                   frequency = 12)
+ts_adj_close
+
+plot.ts(ts_adj_close, main = "Monthly Adjusted Close Price", ylab = "Price ($)", col = "salmon")
+
+```
+
+## 2. Check the Stationarity.
+
+The p-value using adf test with original data was 0.63 that is larger than the significance level. Therefore, I concluded that the data with adj_close has non-stationary. 
+So, I did first order differencing. After the first order of differencing, I got p-value of 0.04347 that is smaller than the significance level 0.05. In conclusion, because the data with the first order differencing has a stationary, I did not use more differencing to avoid over-differencing, and do further works with this differenced ts_adj_close data. 
+
+```{r stationarity}
+adf.test(ts_adj_close) # Augmented Dickey Fuller Test for checking stationary.
+ts_diff <- diff(ts_adj_close) # First order differencing.
+ts_diff
+adf.test(ts_diff)
+```
+
+## 2-2. Plot differenced series to visually assess trend removal
+
+Seasonality confirm! Then, do seasonal decomposition and check stationarity again. 
+
+```{r}
+plot(ts_diff, main = "1st Differenced Adjusted Close", ylab = "Differenced Price ($)", col = "darkred")
+```
+
+## 2-3. # Check for seasonal pattern with ACF/PACF.
+```{r acf, pacf}
+Acf(ts_diff, main = "ACF of 1st Differenced Series")
+Pacf(ts_diff, main = "PACF of 1st Differenced Series")
+```
+
+## 2-4. Seasonal Decomposition and Check the Stationarity. 
+
+```{r stationarity}
+# STL decomposition to visualize trend and seasonality.
+amazon_ts <- ts(amazon_monthly$Adj.Close, frequency = 12)
+decomp <- stl(amazon_ts, s.window = "periodic")
+plot(decomp)
+```
+
+## 2-5. Diagnostics Check!
+
+From the histogram of Residuals, we can see that the data is close to normal distribution. Therefore, we chose SARIMAX(3,1,0)(1,1,0)[12] for model selection. Not ARIMAX Model. 
+
+```{r diagnostics}
+hist(residuals(Arima(ts_adj_close, order = c(3,1,0), seasonal = list(order = c(1,1,0), period = 12))),
+     main = "Histogram of Residuals")
+shapiro.test(residuals(Arima(ts_adj_close, order = c(3,1,0), seasonal = list(order = c(1,1,0), period = 12))))
+```
+
+## 3. Fit the ARIMAX Model with explanatory variables (d=1)
+
+```{r arimax fitting}
+xreg_vars <- amazon_monthly %>% select(Open, High, Low, Volume) %>% as.matrix()
+fit_arimax <- auto.arima(ts_adj_close, xreg = xreg_vars, seasonal = FALSE, d = 1)
+summary(fit_arimax)
+```
+
+## 4. Fit the SARIMAX Model with explanatory variables (d=1)
+
+There were no seasonal pattern using SARIMAX Modeling because the results from ARIMAX to SARIMAX were the same. ARIMAX would be more suitable for model selection but from the plot of differenced data, we saw the seasonal pattern so we should do seasonal decomposition. ## 2 GO go! 
+```{r sarimax fitting}
+fit_sarimax <- auto.arima(ts_adj_close, xreg = xreg_vars, seasonal = TRUE, d = 1)
+summary(fit_sarimax)
+```
+
+## 5. Finalize the model selection: SARIMAX (3,1,0)(1,1,0)[12].
+
+After removing Volume predictor, the values of AIC, BIC are improved. Coefficients are also appropriate.
+
+```{r final model - chose SARIMAX, not ARIMAX}
+xreg_vars <- amazon_monthly %>% select(Open, High, Low) %>% as.matrix()
+fit_sarimax_final <- Arima(ts_adj_close,
+                           xreg = xreg_vars,
+                           order = c(3,1,0),
+                           seasonal = list(order = c(1,1,0), period = 12))
+summary(fit_sarimax_final)
+```
+
+## 6. Forecast Next 12 Months. 
+
+```{r forecasting}
+future_xreg <- matrix(colMeans(tail(xreg_vars, 12)), nrow = 12, ncol = 3, byrow = TRUE)
+colnames(future_xreg) <- colnames(xreg_vars)
+
+forecast_sarimax <- forecast(fit_sarimax_final, xreg = future_xreg)
+
+autoplot(forecast_sarimax) + 
+  labs(title = "12-Month Forecast using Final SARIMAX(3,1,0)(1,1,0)[12]", x = "Time", y = "Adj Close ($)")
+```
+## 6-1. Forecast next 1 month.
+
+```{r forecast next 1 month}
+future_xreg_1mo <- matrix(colMeans(tail(xreg_vars, 12)), nrow = 1, ncol = 3)
+colnames(future_xreg_1mo) <- colnames(xreg_vars)
+
+forecast_1mo <- forecast(fit_sarimax_final, xreg = future_xreg_1mo, h = 1)
+
+autoplot(forecast_1mo) + 
+  labs(title = "1-Month Forecast using Final SARIMAX(3,1,0)(1,1,0)[12]", x = "Time", y = "Adj Close ($)")
+```
+
+## 6-2. Forecast next other periods. (3 months to 2 years)
+
+```{r}
+# Create future xreg values using 12-month moving average
+future_xreg_avg <- colMeans(tail(xreg_vars, 12))
+
+# Forecast for 3 months
+future_xreg_3mo <- matrix(future_xreg_avg, nrow = 3, ncol = 3, byrow = TRUE)
+colnames(future_xreg_3mo) <- colnames(xreg_vars)
+forecast_3mo <- forecast(fit_sarimax_final, xreg = future_xreg_3mo, h = 3)
+
+# Forecast for 6 months
+future_xreg_6mo <- matrix(future_xreg_avg, nrow = 6, ncol = 3, byrow = TRUE)
+colnames(future_xreg_6mo) <- colnames(xreg_vars)
+forecast_6mo <- forecast(fit_sarimax_final, xreg = future_xreg_6mo, h = 6)
+
+# Forecast for 24 months (2 years)
+future_xreg_2y <- matrix(future_xreg_avg, nrow = 24, ncol = 3, byrow = TRUE)
+colnames(future_xreg_2y) <- colnames(xreg_vars)
+forecast_2y <- forecast(fit_sarimax_final, xreg = future_xreg_2y, h = 24)
+
+# Forecast for 36 months (3 years)
+future_xreg_3y <- matrix(future_xreg_avg, nrow = 36, ncol = 3, byrow = TRUE)
+colnames(future_xreg_3y) <- colnames(xreg_vars)
+forecast_3y <- forecast(fit_sarimax_final, xreg = future_xreg_3y, h = 36)
+
+# Plots
+autoplot(forecast_3mo) + labs(title = "3-Month Forecast", x = "Time", y = "Adj Close ($)")
+autoplot(forecast_6mo) + labs(title = "6-Month Forecast", x = "Time", y = "Adj Close ($)")
+autoplot(forecast_2y) + labs(title = "2-Year Forecast", x = "Time", y = "Adj Close ($)")
+autoplot(forecast_3y) + labs(title = "3-Year Forecast", x = "Time", y = "Adj Close ($)")
+```
+
+## 6-3. Forecast Summary Table. - 새로 다 갈아끼워야함. frame 문제임. 
+
+```{r forecast tables on multi}
+# 1-month
+forecast_tbl_1mo <- forecast_1mo %>%
+  as.data.frame() %>%
+  mutate(Date = seq(from = max(amazon_monthly$year_month) + months(1), by = "month", length.out = 1)) %>%
+  select(Date, Point.Forecast, Lo.80, Hi.80, Lo.95, Hi.95) 
+
+
+```
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
