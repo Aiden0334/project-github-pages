@@ -1,0 +1,61 @@
+### 다차원 척도법 - 연습용. <5 Jan 2025>
+{r setup, include=FALSE, echo=FALSE}
+knitr::opts_chunk$set(message=FALSE, warning=FALSE)
+
+## MDS data set From Eurodist with countries. 
+## 거리 행렬 데이터를 사용했는데 유럽 도시 간의 거리를 측정한 
+# eurodist 데이터셋을 이용하고 유럽 21개 도시 간 거리의 거리행렬을 나타내는
+# dist 객체를 저장시켜야함.
+
+
+## 1 ##
+str(eurodist)
+labels(eurodist) # 처음 5개 도시 출력될 것임.
+
+as.matrix(eurodist)[1:5, 1:5]
+
+### Multi-Dimensional Analysis - cmdscale 함수 사용. 
+# (간격척도, 비율측도로 측정한 데이터셋에서 거리행렬에 대한 것을 수행할 시 cmdscale로 수행가능함.)
+
+eurocity.mds <- cmdscale(d=eurodist, k=2)
+eurocity.mds
+
+### 다차원 척도법 plot, text functions. 
+
+plot(eurocity.mds, type="n", main="Multidimensional Scaling Plot")
+text(eurocity.mds, rownames(eurocity.mds), 
+     col="maroon", cex=0.7)
+
+
+## 2 ##
+str(USJudgeRatings)
+
+
+USJudgeRatings.dis<- dist(USJudgeRatings)
+USJudgeRatings.mds<- cmdscale(USJudgeRatings.dis)
+
+plot(USJudgeRatings.mds, type="n", 
+     main="Multidimensional Scaling Plot")
+text(USJudgeRatings.mds, rownames(USJudgeRatings.mds), 
+     col="blue", cex=0.7)
+
+
+## 3 ##
+str(mtcars)
+
+library(cluster)
+mtcars.dis <- daisy(mtcars, metric="gower")
+
+library(MASS)
+mtcars.mds <- isoMDS(mtcars.dis)
+str(mtcars.mds)
+```
+
+plot(mtcars.mds$points, type="n", 
+     main="Multidimensional Scaling Plot")
+text(mtcars.mds$points, rownames(mtcars), 
+     col="purple", cex=0.7)
+```
+### 유사한 것들끼리 같이 있고 유사하지 않은 놈들끼리 멀리 있다는 것을 
+### 나타내고 있음. 
+\
