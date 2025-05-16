@@ -1,0 +1,201 @@
+---
+title: "Final Project by Time Traveler (Group 5) - Non-Seasonal Time Series Analysis by Weekly Aggregation of Daily Demand Forecasting Orders"
+author: "Youngjae Cho"
+date: "2025-05-02"
+output:
+  pdf_document:
+    latex_engine : xelatex
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+
+# Library setting. 
+library(dplyr)    # It is the package for data wrangling
+library(zoo)      # It's for range-mean plot
+library(tseries)  # It's for adf.test
+library(forecast) # It's for arima model and also forecasting. 
+```
+
+1. First step is to upload the data set, "Daily Demand Forecasting Orders." 
+   And second step is to do extract the total orders column and calculate the # of full 5 business days.
+   Then aggregation is needed over each 5 business days cycle to calculate the 5 days' total orders.
+   Change the data set to matrix with 5 days circle. And calculate the sum of total orders. 
+   Finally, we should create a time series object with non-seasonal frequency. 
+   
+```{r}
+data <- read.csv("Daily Demand Forecasting Orders.csv")
+
+colnames(data)
+orders <- data$Target..Total.orders # Extract the total orders column.
+n <- floor(length(orders)/5) # The number of 5 business days in the data set. 
+
+orders_sub <- orders[1:(5*n)] # Extract only 5 business days cycles.
+orders_sub # Total 60 confirm! 
+
+# Build a 5 day period for each row into matrix. 
+totals_matrix <- matrix(orders_sub, ncol = 5, byrow = TRUE) # Changing vector to matrix.
+                                                            # Essential for fitting ARIMA model. 
+weekly_totals <- rowSums(totals_matrix) # Vector of Sum of total orders. 
+
+print(totals_matrix)
+print(weekly_totals)
+
+# Build a time series object with no seasonal frequency (Assume)
+five_day_ts <- ts(weekly_totals, frequency = 1) # frequency = 1 means the non-seasonal time series. 
+
+print(five_day_ts)
+```
+
+2. Build a 5 days Time Series Plot
+
+Interpretation for 5 Business days for Total Orders plot: 
+There was no seasonal pattern during 5 day period. Therefore, I think it is suitable time series. 
+I made non-seasonal structure. Confirm! 
+```{r}
+plot(five_day_ts, type ="o", col = "salmon", lwd = 2, 
+     main = "5 Business days for Total Orders (5 days Aggregation)",
+     xlab = " 5 day Period", ylab = "Total Orders") 
+```
+3. Transformation Check, using the Range-Mean Plot with Package "dplyr."
+
+   Interpretation from range and mean data table and their plot: 
+   They do not have strong upward pattern and also have no linear relationship because from the group 2, 
+   the mean is 1464.028 but the range is 93.820 that means that there were no strong upward pattern. 
+   In conclusion, We do not need a transformation.
+   
+```{r}
+# Data frame for index (1 to n) and values using from ts object to numeric vector. 
+data_weekly <- data.frame(index = 1:length(five_day_ts), value = as.numeric(five_day_ts))
+data_weekly
+
+# Window size, not lower, not higher. 
+window_size <- 3
+
+# Manually compute rolling mean and range using dplyr only
+range_mean_data <- data_weekly %>%
+  mutate(group = ceiling(index / window_size)) %>%
+  group_by(group) %>%
+  summarise(mean = mean(value), range = max(value) - min(value)) %>%
+  filter(!is.na(mean) & !is.na(range))
+range_mean_data # From the range and mean data table, they had no linear relationship. 
+                # There were no strong upward pattern and also no linear relationship.
+                # Therefore, we do not need transformation like log-transformation. 
+
+# Plot range vs mean
+plot(range_mean_data$mean, range_mean_data$range,
+     main = "Range vs Mean Plot",
+     xlab = "Mean", ylab = "Range",
+     pch = 19, col = "skyblue")    # No transformation needed.
+```
+4. ACF and PACF Plots building. 
+
+a. Interpretation for ACF Plot: The ACF value is close to 1 at lag 1, and it was outside of the 95% confidence interval. We can see the only lag 1 has a higher autocorrelation. However, other ACF values from lag 2 are inside of the 95% confidence interval range. The PACF values from lag 2 is going to rapidly decrease that there is no autocorrelation. We can see there has a stationarity. So, we know this is the model of AR(1). 
+This is the evidence for no transformation need and no need for differencing. 
+Also, there was no seasonal pattern so we can use it. 
+
+b. Interpretation for PACF Plot: The PACF value has a weak positive correlation at lag 1 and others have 
+only negative correlation but both PACF value from lag 1 and further PACF values are in the 95% significance level. In conclusion, there were no linear relationship between the past and current value across overall lags. I will use AR(1) model. 
+```{r}
+acf(five_day_ts, main = "ACF Plot for 5 day Total Orders.")
+pacf(five_day_ts, main = "PACF Plot for 5 day Total Orders.")
+```
+5. Checking the Stationarity using augmented Dickey-Fuller Test. 
+
+Interpretation: The ADF test results in a p-value, 0.7304. It is greater than the significance level.
+Therefore, we can see the 5 day aggregated time series is not stationary. 
+Differencing is needed before ARIMA modeling. 
+
+```{r}
+adf.test(five_day_ts)
+```
+6. Do first differencing and check the stationarity using adf.test function before fitting the ARIMA Modeling.
+
+Interpretation: From part 5, I got non-stationarity. So, I did first differencing for getting stationarity.
+Then, I got a stationarity with 5 day differencing with p-value, 0.562, it was higher than the significance level so I will do second differencing. 
+The result from second differencing, the p-value is also higher than the significance level. 
+For avoiding the over-differencing, I think I will use the iden function or do residual analysis. 
+However, I think the length of the data is small so I do not believe the result from the p-value. 
+
+```{r}
+five_day_differncing <- diff(five_day_ts) # First order differencing for getting stationarity.
+
+print(five_day_differncing)
+adf.test(five_day_differncing) # Non-stationary.
+
+five_day_differencing2 <- diff(five_day_differncing)
+adf.test(five_day_differencing2) # Also non-stationary.
+```
+7. I did not get the stationarity so I would use iden function.
+
+a. Interpretation for d = 0: 
+I think the length of the data is small so I do not believe the result from the p-value. 
+From the first iden function, we can see the pattern of ACF and PACF Plots could be used for ARIMA Modeling without differencing. 
+From the result of adf test, the time series was not stationary but there were no significant autocorrelation at the ACF and PACF plots so the time series plot is stable without strong trend or seasonality. 
+
+b. Interpretation for d = 1:
+After first order differencing, I got the time series has no trend and distributed horizontally. Therefore, I can see the first order differencing data has a stationarity. 
+At the ACF Plot, I can see most of ACF values are inside of the 95% confidence interval, that is, there is no autocorrelation. 
+At the PACF Plot, I can see also the most of PACF values are inside of the 95% confidence interval. There is no autocorrelation so we cannot use other AR() structures. 
+In conclusion, after first order differencing, I can see the time series is stationary so we do not need more differencing. 
+
+c. For d= 2: I think it is over-differencing. For avoiding over-differencing, I did not use this. 
+
+Overall, I think I will do not use differencing for fitting ARIMA Modeling. 
+The p-value from d = 0 is 0.7304 that is higher than the p-value from d = 1 but there were no significant autocorrelation or trend patterns. Visually, the series data from d = 0 appears stationary without differencing. Thus, I concluded that the non-differenced 5 day aggregated series could be used as weakly
+stationary but it would be suitable for ARIMA modeling. 
+
+```{r}
+library(RTseries)
+
+# Build a time series data object for RTSeries package. 
+five_day_tsd <- tsd(five_day_ts, 
+                    data.title = "5 day Total Orders",
+                    response.units = "Orders",
+                    time.units = "5 day period")
+five_day_tsd
+
+# Use iden function for differencing for model identification. 
+iden(five_day_tsd, d = 0) 
+iden(five_day_tsd, d = 1)
+iden(five_day_tsd, d = 2) # It would be over-differencing. I did not use this. 
+```
+8. I would use non-differenced aggregated series for fitting the ARIMA modeling. 
+   I will check the model details, AIC, BIC, and residual diagnostics that is for checking normality with the    Normal Q-Q plot. 
+
+   Before start, I have to get a permission to do further steps from Dr. Caragea. 
+   After meeting with Dr. Caragea, I decided to use original data for Seasonal Time Series for final project. This is because the aggregated data had small observations and p-values from the aggregated data had high values.
+   Go back to Seasonal Times Series Project! 
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+## R Markdown
+
+This is an R Markdown document. Markdown is a simple formatting syntax for authoring HTML, PDF, and MS Word documents. For more details on using R Markdown see <http://rmarkdown.rstudio.com>.
+
+When you click the **Knit** button a document will be generated that includes both content as well as the output of any embedded R code chunks within the document. You can embed an R code chunk like this:
+
+Note that the `echo = FALSE` parameter was added to the code chunk to prevent printing of the R code that generated the plot.
